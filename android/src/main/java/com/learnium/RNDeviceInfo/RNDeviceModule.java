@@ -7,20 +7,23 @@ import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
-import android.net.wifi.WifiManager;
 import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.provider.Settings.Secure;
-import android.webkit.WebSettings;
 import android.telephony.TelephonyManager;
 import android.text.format.Formatter;
+import android.util.Log;
+import android.webkit.WebSettings;
 
+import com.facebook.react.bridge.Callback;
+import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
-import com.facebook.react.bridge.Callback;
-import com.facebook.react.bridge.Promise;
 
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -101,13 +104,47 @@ public class RNDeviceModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void getIpAddress(Promise p) {
-    String ipAddress = Formatter.formatIpAddress(getWifiInfo().getIpAddress());
-    p.resolve(ipAddress);
+    WifiInfo wifi = getWifiInfo();
+    if(wifi != null) {
+      String ipAddress = Formatter.formatIpAddress(wifi.getIpAddress());
+      p.resolve(ipAddress);
+    }else{
+      p.reject("-1", "Can't not get Wifi information.");
+    }
+  }
+
+  protected String getWifiMac() {
+    String wlanMac = null;
+    WifiInfo wifi = getWifiInfo();
+    if(wifi != null) {
+      wlanMac = wifi.getMacAddress();
+    }
+    if (wlanMac == null || wlanMac.compareToIgnoreCase("02:00:00:00:00:00") == 0) {
+      try {
+        NetworkInterface networkInterface = NetworkInterface.getByName("wlan0");
+        if (networkInterface != null) {
+          byte[] addr = networkInterface.getHardwareAddress();
+          if (addr != null && addr.length > 0) {
+            StringBuilder buf = new StringBuilder();
+            for (byte b : addr) {
+              buf.append(String.format("%02X:", b));
+            }
+            if (buf.length() > 0) {
+              buf.deleteCharAt(buf.length() - 1);
+            }
+            wlanMac = buf.toString();
+          }
+        }
+      } catch (SocketException e) {
+        Log.e("RNDevice", e.getMessage(), e);
+      }
+    }
+    return wlanMac;
   }
 
   @ReactMethod
   public void getMacAddress(Promise p) {
-    String macAddress = getWifiInfo().getMacAddress();
+    String macAddress = getWifiMac();
     p.resolve(macAddress);
   }
 
@@ -170,11 +207,7 @@ public class RNDeviceModule extends ReactContextBaseJavaModule {
     constants.put("systemManufacturer", Build.MANUFACTURER);
     constants.put("bundleId", packageName);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-      try {
-        constants.put("userAgent", WebSettings.getDefaultUserAgent(this.reactContext));
-      } catch (PackageManager.NameNotFoundException e) {
-        constants.put("userAgent", System.getProperty("http.agent"));
-      }
+      constants.put("userAgent", WebSettings.getDefaultUserAgent(this.reactContext));
     }
     constants.put("timezone", TimeZone.getDefault().getID());
     constants.put("isEmulator", this.isEmulator());
